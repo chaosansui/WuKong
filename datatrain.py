@@ -1,7 +1,7 @@
-import threading
 import time
 import json
-from pynput.keyboard import Listener as KeyboardListener
+import threading
+from pynput.keyboard import Listener as KeyboardListener, KeyCode
 from pynput.mouse import Listener as MouseListener
 from PIL import ImageGrab
 import numpy as np
@@ -14,62 +14,80 @@ log_file_path = "game_logs.json"
 # 日志结构
 log_data = []
 
+# 运行状态
+is_running = False
+
 
 # 捕获键盘输入记录
 def on_key_press(key):
-    event_time = time.time()
-    log_entry = {
-        'timestamp': event_time,
-        'event_type': 'key_press',
-        'key': str(key)
-    }
-    log_data.append(log_entry)
-    print(f"Key pressed: {key}")
+    global is_running
+    if isinstance(key, KeyCode) and key.char == 'm':
+        is_running = not is_running
+        if is_running:
+            print("程序已启动")
+        else:
+            print("程序已暂停")
+    else:
+        if is_running:
+            event_time = time.time()
+            log_entry = {
+                'timestamp': event_time,
+                'event_type': 'key_press',
+                'key': str(key)
+            }
+            log_data.append(log_entry)
+            save_logs()  # 每次捕获后立即保存日志
+            print(f"Key pressed: {key}")
 
 
 # 捕获鼠标点击记录
 def on_mouse_click(x, y, button, pressed):
-    event_time = time.time()
-    event_type = 'mouse_press' if pressed else 'mouse_release'
-    log_entry = {
-        'timestamp': event_time,
-        'event_type': event_type,
-        'position': (x, y),
-        'button': str(button)
-    }
-    log_data.append(log_entry)
-    print(f"Mouse {event_type} at ({x}, {y}) with {button}")
+    if is_running:
+        event_time = time.time()
+        event_type = 'mouse_press' if pressed else 'mouse_release'
+        log_entry = {
+            'timestamp': event_time,
+            'event_type': event_type,
+            'position': (x, y),
+            'button': str(button)
+        }
+        log_data.append(log_entry)
+        save_logs()  # 每次捕获后立即保存日志
+        print(f"Mouse {event_type} at ({x}, {y}) with {button}")
 
 
 # 捕获屏幕状态
 def capture_screen(region=(0, 0, 1920, 1080), output_dir="screenshots"):
-    # 创建截图保存目录
-    if not os.path.exists(output_dir):
-        os.makedirs(output_dir)
+    if is_running:
+        # 创建截图保存目录
+        if not os.path.exists(output_dir):
+            os.makedirs(output_dir)
 
-    # 获取当前时间作为文件名
-    timestamp = time.time()
-    screenshot = ImageGrab.grab(bbox=region)
-    screenshot_np = np.array(screenshot)
+        # 获取当前时间作为文件名
+        timestamp = time.time()
+        screenshot = ImageGrab.grab(bbox=region)
+        screenshot_np = np.array(screenshot)
 
-    # 保存截图文件
-    screenshot_filename = f"{output_dir}/screenshot_{timestamp}.png"
-    cv2.imwrite(screenshot_filename, cv2.cvtColor(screenshot_np, cv2.COLOR_RGB2BGR))
+        # 保存截图文件
+        screenshot_filename = f"{output_dir}/screenshot_{timestamp}.png"
+        cv2.imwrite(screenshot_filename, cv2.cvtColor(screenshot_np, cv2.COLOR_RGB2BGR))
 
-    # 记录截图的文件路径和时间戳
-    log_entry = {
-        'timestamp': timestamp,
-        'event_type': 'screenshot',
-        'file_path': screenshot_filename
-    }
-    log_data.append(log_entry)
-    print(f"Captured screenshot at {screenshot_filename}")
+        # 记录截图的文件路径和时间戳
+        log_entry = {
+            'timestamp': timestamp,
+            'event_type': 'screenshot',
+            'file_path': screenshot_filename
+        }
+        log_data.append(log_entry)
+        save_logs()  # 每次捕获后立即保存日志
+        print(f"Captured screenshot at {screenshot_filename}")
 
 
 # 定期捕捉游戏状态
 def capture_game_state(interval=1):
     while True:
-        capture_screen()
+        if is_running:
+            capture_screen()
         time.sleep(interval)  # 每隔interval秒捕获一次屏幕状态
 
 
@@ -82,6 +100,7 @@ def save_logs():
 
 # 主程序
 def main():
+    global is_running
     # 启动键盘和鼠标事件监听
     with KeyboardListener(on_press=on_key_press) as keyboard_listener, \
             MouseListener(on_click=on_mouse_click) as mouse_listener:
